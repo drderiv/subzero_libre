@@ -25,3 +25,7 @@ test.txt
 .idea/
 *.swp
 *.swo
+captcha.png
+
+.coverage
+.pytest_cache/

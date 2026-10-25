@@ -64,5 +64,8 @@ def current_humidity(props: Mapping[str, Any]) -> str | None:
 
 
 def changed_settings(props: Mapping[str, Any], setting: Mapping[str, Any]) -> dict[str, Any]:
-    """Return only the values in ``setting`` that differ from current telemetry."""
-    return {key: value for key, value in setting.items() if props.get(key) != value}
+    """Return only the values in ``setting`` that differ from current telemetry.
+
+    A property the appliance has not reported yet counts as off/False.
+    """
+    return {key: value for key, value in setting.items() if props.get(key, False) != value}

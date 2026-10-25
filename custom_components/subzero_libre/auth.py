@@ -1,6 +1,7 @@
 """Sign-in helpers shared by the integration and the developer scripts.
 
-Standard library only, so the scripts can use them without Home Assistant or aiohttp.
+Standard library only (no Home Assistant, no aiohttp); shared by the integration, the
+email/password login module and the developer scripts.
 """
 
 from __future__ import annotations

@@ -1,5 +1,15 @@
 # Changelog
 
+## 1.1.0
+
+### Added
+* **Email and password sign-in** inside Home Assistant (with support for the text-message code and image check Sub-Zero may ask for). The password is never stored.
+* The sign-in dialog now starts with a choice of **email and password** or **web browser**. If the email/password method cannot complete (an unsupported verification step, a changed sign-in page, repeated wrong answers), the flow switches to the web browser method automatically. Re-authentication offers the same choice.
+* Automated tests (login module against a fake sign-in service, config flow, mode logic, telemetry ordering, discovery).
+
+### Changed
+* `subzero_auth_test.py` now uses the integration's own login and client code and requires `aiohttp`; it can sign in with either method.
+
 ## 1.0.0
 
 Initial public release.

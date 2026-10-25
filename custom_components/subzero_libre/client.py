@@ -39,7 +39,7 @@ _SIGNALR_RETRY_MAX = 60
 _STALE_WINDOW = 60  # seconds a newer property value outranks an older seq
 
 _SECRET_PARAM_RE = re.compile(
-    r"\b(access_token|id_token|refresh_token|code|code_verifier)=[^&\s'\"]+"
+    r"\b(access_token|id_token|refresh_token|code|code_verifier|password|signInName|verification_code)=[^&\s'\"]+"
 )
 _BEARER_RE = re.compile(r"(Bearer\s+)[\w.\-~+/]+=*", re.IGNORECASE)
 

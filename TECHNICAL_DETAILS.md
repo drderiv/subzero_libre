@@ -98,3 +98,26 @@ Sub-Zero appliances utilize Azure IoT Hub Direct Methods for all remote cloud co
   * **Temperature Setpoints:** `ref_set_temp`, `frz_set_temp`, `crisp_set_temp` (integer degrees).
   * **Appliance Modes:** `ice_maker_on`, `max_ice_on`, `night_ice_on`, `air_filter_on`, `sabbath_on` (boolean).
   * **Cloud Reporting Channel:** `{"cmd": "open_cloud_async"}` (prompts the physical appliance to immediately push full telemetry snapshots over the SignalR stream).
+
+
+---
+
+## Sign-in Flows
+
+Both methods use the same Azure AD B2C authorization-code flow with PKCE (client ID and redirect URI above) and end with the same token exchange.
+
+* **Web browser:** the user signs in on Sub-Zero's hosted page; the final redirect to `com.szg...://oauth/redirect?code=...` fails in a desktop browser, so the user copies that URL and pastes it into Home Assistant. `state` is validated.
+* **Email and password** (`login.py`): Home Assistant replays the hosted page's own requests. It loads the authorize page, reads the `SETTINGS` block (CSRF token, transaction ID, page type), `POST`s `signInName` and `password` to `/SelfAsserted`, then `GET`s `/api/CombinedSigninAndSignup/confirmed` and follows redirects itself until the app redirect appears. If B2C inserts a phone-verification page, it requests a one-way SMS (`/PhoneFactor/verify`, `VERIFICATION_REQUEST` then `VALIDATION_REQUEST`) and, when the page enables it, completes the image challenge through B2C's captcha-control endpoints. Anything else raises `LoginUnsupported` and the config flow falls back to the browser method. A dedicated aiohttp session with its own cookie jar is used, only `login.subzero-wolf.com` is contacted, and the password is never stored or logged.
+
+---
+
+## Development & Testing
+
+* `subzero_auth_test.py` (sign in, list appliances) and `live_signalr_test.py` (monitor telemetry, send commands) import the integration's own client and login modules, so they exercise the production code. They need `aiohttp`.
+* Tests live in `tests/` and use `pytest-homeassistant-custom-component`. Run them from the repository root, for example in the Home Assistant Docker image:
+
+  ```bash
+  docker run --rm --entrypoint sh -v "$PWD":/work ghcr.io/home-assistant/home-assistant:stable \
+      -c 'cd /work && pip install -q -r requirements-test.txt && python3 -m pytest -q'
+  ```
+  The login module is tested against a scripted fake B2C service; the config flow, mode logic, telemetry ordering and discovery are covered too. The SignalR streaming code in `client.py` is not yet covered.

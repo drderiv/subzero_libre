@@ -70,14 +70,27 @@ Provides real-time telemetry streaming, temperature monitoring, door ajar alerts
 
 Setting up Sub-Zero Libre is a one-time action performed directly through Home Assistant's web interface. After the one-time setup, tokens are automatically refreshed in the background for seamless, continuous operation.
 
-> [!IMPORTANT]
-> **Desktop Browser Required:** Please perform this setup on a desktop browser (such as Chrome, Edge, or Firefox). Mobile browsers (and the Home Assistant mobile companion app) lack Developer Tools required to capture the redirect URL. The browser does not need to be on the same machine as Home Assistant.
-
 1. In Home Assistant, navigate to **Settings** > **Devices & Services** > **Add Integration**.
 2. Search for **Sub-Zero Libre**.
-3. A setup dialog will appear with a sign-in link:
-   * Click **Click Here to Log In with Sub-Zero** to open the official Wolf / Sub-Zero sign-in page in a new tab, and **wait for the page to finish loading completely**.
-4. **Capture the Redirect URL:**
+3. Choose how to sign in: **Email and password** (recommended), or **Web browser (advanced)**.
+
+### Option 1: Email and password (recommended)
+
+1. Enter the email and password you use in the Sub-Zero mobile app and click **Submit**.
+2. If Sub-Zero asks for extra verification, Home Assistant will show it: type the characters from an **image check**, and/or the **code Sub-Zero sends you by text message**.
+3. Home Assistant completes the sign-in and discovers your appliances.
+
+Your password is sent only to Sub-Zero's own sign-in service (`login.subzero-wolf.com`), exactly as it would be from a browser, and it is **never stored**. Home Assistant keeps only the renewable sign-in tokens Sub-Zero returns (protect your Home Assistant backups accordingly).
+
+If your account needs a verification step this method cannot complete, or Sub-Zero changes its sign-in page, Home Assistant tells you and switches to the web browser method automatically.
+
+### Option 2: Web browser (for those who prefer not to enter their password into Home Assistant)
+
+> [!IMPORTANT]
+> **Desktop Browser Required:** Please perform this on a desktop browser (such as Chrome, Edge, or Firefox). Mobile browsers (and the Home Assistant mobile companion app) lack Developer Tools required to capture the redirect URL. The browser does not need to be on the same machine as Home Assistant.
+
+1. In the Home Assistant dialog, click **Click Here to Log In with Sub-Zero** to open the official Wolf / Sub-Zero sign-in page in a new tab, and **wait for the page to finish loading completely**.
+2. **Capture the Redirect URL:**
    * Once the page has loaded, open **Developer Tools** (press **F12** or **Ctrl+Shift+I**, or use the browser menu) and switch to the **Network** tab. Doing this *after* the page loads keeps the list nearly empty, so the row you need is easy to spot.
    * Enter your Sub-Zero mobile app email and password, then click **Sign In**.
    * The page will remain on the login screen (depending on your setup, you may see something like "Page Not Found" or "Unable to open address" or a box pop up asking if you wish to open another application — just ignore any of these). A few new rows appear in the **Network** tab; the last one, at the bottom, is highlighted in **red** (desktop browsers cannot open the mobile app link, so the request fails).
@@ -85,10 +98,11 @@ Setting up Sub-Zero Libre is a one-time action performed directly through Home A
      ```text
      com.szg.szgdigitalproductexperience://oauth/redirect?code=...
      ```
-5. Return to the Home Assistant dialog, paste the copied URL into the field, and click **Submit**.
-6. Home Assistant will securely complete the PKCE token exchange, establish the real-time SignalR connection, and instantly discover your Sub-Zero appliances, sensors, setpoint controls, and switches!
+3. Return to the Home Assistant dialog, paste the copied URL into the field, and click **Submit**.
 
-*(Optional / Advanced: If you already have a `refresh_token` or `subzero_tokens.json`, you can paste either directly into the field, or run the standalone developer verification tool `python3 subzero_auth_test.py`.)*
+Either way, Home Assistant then establishes the real-time SignalR connection and discovers your Sub-Zero appliances, sensors, setpoint controls, and switches.
+
+*(Optional / Advanced: If you already have a `refresh_token` or `subzero_tokens.json`, you can paste either directly into the browser method's field. The developer tool `python3 subzero_auth_test.py` (needs `pip install aiohttp`) can sign in with either method and list your appliances.)*
 
 ---
 
@@ -212,8 +226,9 @@ Faults are re-checked at the Cloud Check Interval (default 5 minutes), so allow 
 
 ## Troubleshooting
 
-* **I can't find the redirect URL during sign-in.** Open the sign-in link and let the page finish loading **before** opening Developer Tools (F12 or Ctrl+Shift+I) and the **Network** tab, then sign in. The page stays on the login screen, and you may see "Page Not Found", "Unable to open address" or a prompt to open another application; ignore these. Right-click the last (red) row in the Network tab and choose **Copy** > **Copy URL**.
-* **Re-authentication required.** If Sub-Zero rejects the stored sign-in, Home Assistant shows a **Re-authenticate** prompt on the integration. Complete the same browser sign-in again; your entities, automations and history are kept.
+* **Email and password sign-in says it is unavailable.** Home Assistant switches to the web browser method (see *Option 2* above) when Sub-Zero asks for a step the email/password method cannot complete, or after repeated wrong verification answers. Nothing is wrong with your account; use the browser steps. If you see "Sub-Zero is limiting sign-in attempts", wait a while before trying again.
+* **I can't find the redirect URL during web browser sign-in.** Open the sign-in link and let the page finish loading **before** opening Developer Tools (F12 or Ctrl+Shift+I) and the **Network** tab, then sign in. The page stays on the login screen, and you may see "Page Not Found", "Unable to open address" or a prompt to open another application; ignore these. Right-click the last (red) row in the Network tab and choose **Copy** > **Copy URL**.
+* **Re-authentication required.** If Sub-Zero rejects the stored sign-in, Home Assistant shows a **Re-authenticate** prompt on the integration. Choose a sign-in method again (email and password, or web browser); your entities, automations and history are kept.
 * **Entities are missing or show `Unknown` after setup.** Entities are created from what the appliance reports, and the first full snapshot can take a little while. If it doesn't arrive, force-stop and reopen the official Sub-Zero mobile app, which prompts the cloud to request one. The entities then appear automatically.
 * **Entities are `unavailable`, or Cloud Connection shows off.** Entities become unavailable only when the real-time stream is down *and* the periodic cloud check is failing. The stream reconnects automatically with back-off. Make sure the Home Assistant host can reach `login.subzero-wolf.com`, `prod.iot.subzero.com` and `*.service.signalr.net` on port 443. Brief network or DNS blips are logged once and recover on their own.
 * **The Crisper setpoint won't change.** Turn off **Automatic Crisper Temperature** first; while it is on, the appliance sets the crisper 2°F below the refrigerator.

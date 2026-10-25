@@ -1,114 +1,67 @@
 #!/usr/bin/env python3
 """
-Sub-Zero Cloud Authentication & Discovery Tool
-==============================================
-Signs in to Sub-Zero (Azure AD B2C, PKCE), saves subzero_tokens.json, and lists the
-appliances on the account. Standard library only; no packages to install.
-
-Constants and sign-in helpers come from custom_components/subzero_libre so this tool
-and the Home Assistant integration cannot drift apart.
+Sub-Zero Cloud Sign-in & Discovery Tool
+=======================================
+Signs in to Sub-Zero (Azure AD B2C), saves subzero_tokens.json, and lists the appliances
+on the account. Uses the same login and client code as the Home Assistant integration
+(custom_components/subzero_libre), so it exercises the real thing. Needs only `aiohttp`.
 
 Usage:
-  python3 subzero_auth_test.py               # reuse/refresh cached tokens, or sign in
-  python3 subzero_auth_test.py --login       # force a new interactive sign-in
-  python3 subzero_auth_test.py --no-browser  # headless/SSH: only print the sign-in URL
-  python3 subzero_auth_test.py --verbose  # also print the full device JSON
+  python3 subzero_auth_test.py             # reuse/refresh cached tokens, or ask how to sign in
+  python3 subzero_auth_test.py --password  # sign in with email and password (no browser)
+  python3 subzero_auth_test.py --browser   # sign in with a browser and paste the redirect URL
+  python3 subzero_auth_test.py --no-browser  # never try to launch a browser, only print the URL
+  python3 subzero_auth_test.py --verbose   # DEBUG logging from the client
 """
 
 import argparse
+import asyncio
+import base64
 import contextlib
+import getpass
 import json
+import logging
 import os
 import secrets
 import sys
 import time
 import types
-import urllib.error
-import urllib.request
 import webbrowser
 from typing import Any
-from urllib.parse import urlencode
+from urllib.parse import urlparse
 
-# Load shared stdlib-only modules without importing Home Assistant via the package.
+import aiohttp
+
+# Load the integration's modules without importing Home Assistant (the package __init__ does).
 CURRENT_DIR = os.path.dirname(os.path.abspath(__file__))
 _pkg = types.ModuleType("subzero_libre")
 _pkg.__path__ = [os.path.join(CURRENT_DIR, "custom_components", "subzero_libre")]
 sys.modules["subzero_libre"] = _pkg
 
 from subzero_libre.auth import (  # noqa: E402
-    apim_headers,
     build_authorization_url,
     decode_jwt_payload,
     generate_pkce_pair,
     parse_auth_input,
     write_private_json,
 )
-from subzero_libre.const import (  # noqa: E402
-    APIM_BASE_URL,
-    B2C_TOKEN_URL,
-    CLIENT_ID,
-    MODEL_MAPPING,
-    REDIRECT_URI,
+from subzero_libre.client import (  # noqa: E402
+    SubZeroAsyncClient,
+    SubZeroAuthError,
+    SubZeroError,
+)
+from subzero_libre.login import (  # noqa: E402
+    LoginInvalidAuth,
+    LoginInvalidCaptcha,
+    LoginInvalidCode,
+    LoginRateLimited,
+    LoginStep,
+    LoginUnsupported,
+    SubZeroLogin,
 )
 
 TOKEN_FILE = os.path.join(CURRENT_DIR, "subzero_tokens.json")
-TOKEN_HEADERS = {
-    "Content-Type": "application/x-www-form-urlencoded",
-    "User-Agent": "okhttp/4.9.2",
-}
-
-
-def http_request(
-    url: str,
-    method: str = "GET",
-    headers: dict[str, str] | None = None,
-    form: dict[str, str] | None = None,
-    json_body: Any = None,
-) -> tuple[int, str]:
-    """Perform an HTTP request with urllib; returns (status, body). Status 0 = network error."""
-    data = None
-    if json_body is not None:
-        data = json.dumps(json_body).encode("utf-8")
-    elif form is not None:
-        data = urlencode(form).encode("utf-8")
-    request = urllib.request.Request(url, data=data, headers=headers or {}, method=method)
-    try:
-        with urllib.request.urlopen(request, timeout=15) as resp:
-            return resp.status, resp.read().decode("utf-8")
-    except urllib.error.HTTPError as err:
-        return err.code, err.read().decode("utf-8") if err.fp else ""
-    except (urllib.error.URLError, TimeoutError) as err:
-        return 0, str(getattr(err, "reason", err))
-
-
-def token_request(form: dict[str, str]) -> dict[str, Any] | None:
-    """POST to the B2C token endpoint; returns tokens or None (after printing why)."""
-    status, text = http_request(B2C_TOKEN_URL, "POST", TOKEN_HEADERS, form=form)
-    if status != 200:
-        print(f"\n[!] Token request failed (HTTP {status}): {text}")
-        return None
-    tokens = json.loads(text)
-    tokens["obtained_at"] = int(time.time())
-    return tokens
-
-
-def refresh_tokens(refresh_token: str) -> dict[str, Any] | None:
-    tokens = token_request(
-        {
-            "grant_type": "refresh_token",
-            "client_id": CLIENT_ID,
-            "refresh_token": refresh_token,
-            "redirect_uri": REDIRECT_URI,
-        }
-    )
-    if tokens:
-        tokens.setdefault("refresh_token", refresh_token)
-    return tokens
-
-
-def save_tokens(tokens: dict[str, Any]) -> None:
-    write_private_json(TOKEN_FILE, tokens)
-    print(f"[*] Tokens saved to {TOKEN_FILE}")
+MAX_CHALLENGE_ATTEMPTS = 3
 
 
 def load_tokens() -> dict[str, Any] | None:
@@ -120,6 +73,10 @@ def load_tokens() -> dict[str, Any] | None:
     except (OSError, json.JSONDecodeError) as err:
         print(f"[-] Could not read cached tokens: {err}")
         return None
+
+
+def save_tokens(tokens: dict[str, Any]) -> None:
+    write_private_json(TOKEN_FILE, {**tokens, "obtained_at": int(time.time())})
 
 
 def try_open_browser(url: str) -> bool:
@@ -144,8 +101,54 @@ def try_open_browser(url: str) -> bool:
             os.close(saved)
 
 
-def interactive_login(open_browser: bool = True) -> dict[str, Any]:
-    print("\n" + "=" * 65 + "\nSUB-ZERO OAUTH2 PKCE AUTHENTICATION\n" + "=" * 65)
+async def prompt(text: str, secret: bool = False) -> str:
+    """Read a line without blocking the event loop."""
+    reader = getpass.getpass if secret else input
+    return (await asyncio.to_thread(reader, text)).strip()
+
+
+# ------------------------------------------------------------------ sign-in
+
+
+async def password_signin(session: aiohttp.ClientSession) -> dict[str, Any]:
+    """Email and password sign-in, including SMS and image challenges."""
+    print("\n" + "=" * 65 + "\nEMAIL + PASSWORD SIGN-IN\n" + "=" * 65)
+    print("Your password is sent only to Sub-Zero's sign-in service and is never stored.")
+    email = await prompt("Sub-Zero email: ")
+    password = await prompt("Password (hidden): ", secret=True)
+
+    # A separate session with its own cookie jar, exactly as the integration does
+    async with aiohttp.ClientSession(cookie_jar=aiohttp.CookieJar(quote_cookie=False)) as login_session:
+        login = SubZeroLogin(login_session, session)
+        result: dict[str, Any] | LoginStep = await login.async_login(email, password)
+        del password
+        attempts = 0
+        while isinstance(result, LoginStep):
+            try:
+                if result.kind == "captcha":
+                    image_file = os.path.join(CURRENT_DIR, "captcha.png")
+                    with open(image_file, "wb") as file:
+                        file.write(base64.b64decode((result.captcha_image or "").split(",", 1)[-1]))
+                    print(f"\n[?] Sub-Zero asks for an image check. Open {image_file} and type the characters.")
+                    answer = await prompt("    Characters: ")
+                    os.remove(image_file)
+                    result = await login.async_submit_captcha(answer)
+                else:
+                    print("\n[?] Sub-Zero sent a verification code by text message.")
+                    result = await login.async_submit_code(await prompt("    Code: "))
+            except (LoginInvalidCaptcha, LoginInvalidCode) as err:
+                attempts += 1
+                if attempts >= MAX_CHALLENGE_ATTEMPTS:
+                    raise LoginUnsupported("Too many failed attempts") from err
+                print(f"[!] {err}. Try again.")
+                if isinstance(err, LoginInvalidCaptcha):
+                    result = await login.async_new_captcha()
+        return result
+
+
+async def browser_signin(session: aiohttp.ClientSession, open_browser: bool) -> dict[str, Any]:
+    """Browser sign-in: open the link, sign in, paste the redirect URL."""
+    print("\n" + "=" * 65 + "\nWEB BROWSER SIGN-IN\n" + "=" * 65)
     verifier, challenge = generate_pkce_pair()
     state = secrets.token_urlsafe(16)
     auth_url = build_authorization_url(challenge, state)
@@ -164,108 +167,96 @@ def interactive_login(open_browser: bool = True) -> dict[str, Any]:
     print("        com.szg.szgdigitalproductexperience://oauth/redirect?code=...")
     print("        Paste it below.")
 
-    parsed = parse_auth_input(input("\nEnter Redirect URL: "))
+    parsed = parse_auth_input(await prompt("\nEnter Redirect URL: "))
     if parsed.kind != "code" or not parsed.code:
         sys.exit("[!] No authorization code found in input!")
     if parsed.state and parsed.state != state:
         sys.exit("[!] The 'state' in that URL does not match this sign-in attempt. Start again.")
-
     print("\n[*] Exchanging authorization code for tokens...")
-    tokens = token_request(
-        {
-            "grant_type": "authorization_code",
-            "client_id": CLIENT_ID,
-            "code": parsed.code,
-            "redirect_uri": REDIRECT_URI,
-            "code_verifier": verifier,
-        }
-    )
-    if tokens is None:
-        sys.exit(1)
-    save_tokens(tokens)
-    return tokens
+    return await SubZeroAsyncClient.async_exchange_code_for_tokens(session, parsed.code, verifier)
 
 
-def get_valid_tokens(force_login: bool, open_browser: bool = True) -> dict[str, Any]:
-    """Return fresh tokens: cached if still valid, else refreshed, else a new sign-in."""
-    tokens = None if force_login else load_tokens()
-    if tokens and tokens.get("refresh_token"):
-        lifetime = tokens.get("id_token_expires_in") or tokens.get("expires_in", 3600)
-        if time.time() - tokens.get("obtained_at", 0) < lifetime - 300:
-            print("[*] Reusing cached valid token.")
-            return tokens
-        print("[*] Cached token is expired or expiring soon, refreshing...")
-        if refreshed := refresh_tokens(tokens["refresh_token"]):
-            save_tokens(refreshed)
-            return refreshed
-        print("[-] Refresh failed, falling back to interactive login.")
-    return interactive_login(open_browser)
-
-
-def api_get(endpoint: str, id_token: str, user_id: str, method: str = "GET") -> tuple[int, Any]:
-    """Call the APIM gateway with the same headers the integration sends."""
-    status, text = http_request(
-        f"{APIM_BASE_URL}{endpoint}", method, apim_headers(id_token, user_id, False)
-    )
+async def sign_in(session: aiohttp.ClientSession, args: argparse.Namespace) -> dict[str, Any]:
+    method = "password" if args.password else "browser" if args.browser else ""
+    while not method:
+        choice = await prompt("Sign in with [1] email and password or [2] a web browser? ")
+        method = {"1": "password", "2": "browser"}.get(choice, "")
+    if method == "browser":
+        return await browser_signin(session, not args.no_browser)
     try:
-        return status, json.loads(text) if text else None
-    except json.JSONDecodeError:
-        return status, text
+        return await password_signin(session)
+    except LoginInvalidAuth:
+        sys.exit("[!] The email or password was not accepted.")
+    except LoginRateLimited:
+        sys.exit("[!] Sub-Zero is limiting sign-in attempts. Wait a while, then try again.")
+    except LoginUnsupported as err:
+        sys.exit(f"[!] Email/password sign-in cannot be used here ({err}).\n    Use --browser instead.")
 
 
-def list_appliances(tokens: dict[str, Any], verbose: bool) -> None:
-    id_token = tokens.get("id_token")
-    if not id_token:
-        sys.exit("[!] No id_token available; run with --login.")
-    claims = decode_jwt_payload(id_token)
-    user_id = claims.get("sub", "")
+# ---------------------------------------------------------------- discovery
+
+
+async def list_appliances(client: SubZeroAsyncClient) -> None:
+    claims = decode_jwt_payload(client.id_token or "")
     name = f"{claims.get('given_name', '')} {claims.get('family_name', '')}".strip() or "User"
-
     print("\n" + "=" * 65)
     print(f"AUTHENTICATED USER: {name} ({claims.get('email', 'unknown email')})")
-    print(f"User ID (sub claim): {user_id}")
+    print(f"User ID (sub claim): {client.user_id}")
     print("=" * 65)
 
-    status, data = api_get("/consumerapp/user/devices", id_token, user_id)
-    if status != 200:
-        sys.exit(f"[!] /consumerapp/user/devices returned HTTP {status}: {data}")
-    devices = data.get("devices", []) if isinstance(data, dict) else data
+    devices = await client.async_get_devices()
     print(f"\nDISCOVERED {len(devices)} REGISTERED APPLIANCE(S)")
-
     for dev in devices:
-        serial = dev.get("serialNumber", "unknown")
-        appliance_id = dev.get("applianceId", "")
-        print(f"\n--- Appliance: {dev.get('name') or 'Sub-Zero Refrigerator'} ---")
-        print(f"    - Serial Number : {serial}")
-        print(f"    - Model         : {MODEL_MAPPING.get(appliance_id, f'Sub-Zero Model {appliance_id}')}")
-        print(f"    - Temp Unit     : {dev.get('temperatureUnitForAppliance') or 'F'}")
+        print(f"\n--- Appliance: {dev.name} ---")
+        print(f"    - Serial Number : {dev.serial_number}")
+        print(f"    - Model         : {dev.model_description}")
+        print(f"    - Temp Unit     : {dev.temp_unit}")
+        print(f"    - Active Faults : {dev.faults or 'None (Operating Normally)'}")
 
-        fault_status, faults = api_get(f"/fault-notifications/v1/notifications/device/{serial}", id_token, user_id)
-        if fault_status == 200:
-            print(f"    - Active Faults : {faults or 'None (Operating Normally)'}")
-
-        dump_file = os.path.join(CURRENT_DIR, f"appliance_{serial}.json")
-        write_private_json(dump_file, {"metadata": dev, "faults": faults if fault_status == 200 else []})
-        print(f"[*] Appliance data saved to {dump_file}")
-        if verbose:
-            print(json.dumps(dev, indent=2))
-
-    status, hub = api_get("/signal-r/negotiateUser", id_token, user_id, method="POST")
-    if status == 200:
-        print(f"\n[+] SignalR negotiation succeeded (hub: {hub.get('url')})")
-        print("    Run live_signalr_test.py to monitor real-time telemetry.")
-    else:
-        print(f"\n[-] SignalR negotiate returned HTTP {status}: {hub}")
+    hub = await client.async_negotiate_signalr()
+    print(f"\n[+] SignalR negotiation succeeded (hub: {urlparse(hub.get('url', '')).hostname})")
+    print("    Run live_signalr_test.py to monitor real-time telemetry.")
 
 
-def main() -> None:
+async def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    parser.add_argument("--login", action="store_true", help="Force interactive login (ignore cached tokens)")
+    parser.add_argument("--password", action="store_true", help="Sign in with email and password")
+    parser.add_argument("--browser", "--login", dest="browser", action="store_true", help="Sign in with a web browser")
     parser.add_argument("--no-browser", action="store_true", help="Never try to launch a browser; just print the URL")
-    parser.add_argument("--verbose", "-v", action="store_true", help="Print full device JSON")
+    parser.add_argument("--verbose", "-v", action="store_true", help="DEBUG logging")
     args = parser.parse_args()
-    list_appliances(get_valid_tokens(args.login, not args.no_browser), args.verbose)
+    logging.basicConfig(level=logging.DEBUG if args.verbose else logging.WARNING)
+
+    async with aiohttp.ClientSession() as session:
+        tokens = None if (args.password or args.browser) else load_tokens()
+        client: SubZeroAsyncClient | None = None
+        if tokens and tokens.get("refresh_token"):
+            client = SubZeroAsyncClient(
+                session, tokens["refresh_token"], tokens.get("id_token"),
+                on_tokens_updated=lambda rt, idt: save_tokens({**tokens, "refresh_token": rt, "id_token": idt}),
+            )
+            try:
+                await client.async_refresh_tokens()
+                print("[*] Cached sign-in refreshed.")
+            except SubZeroAuthError:
+                print("[-] Cached sign-in is no longer valid.")
+                client = None
+        if client is None:
+            tokens = await sign_in(session, args)
+            save_tokens(tokens)
+            print(f"[*] Tokens saved to {TOKEN_FILE}")
+            client = SubZeroAsyncClient(
+                session, tokens["refresh_token"], tokens.get("id_token"),
+                on_tokens_updated=lambda rt, idt: save_tokens({**tokens, "refresh_token": rt, "id_token": idt}),
+            )
+        try:
+            await list_appliances(client)
+        except SubZeroError as err:
+            sys.exit(f"[!] {err}")
 
 
 if __name__ == "__main__":
-    main()
+    try:
+        asyncio.run(main())
+    except KeyboardInterrupt:
+        print("\n[*] Stopped.")
