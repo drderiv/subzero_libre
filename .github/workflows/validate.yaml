@@ -22,5 +22,3 @@ jobs:
       - uses: hacs/action@main
         with:
           category: integration
-          # Brand images are not registered in home-assistant/brands yet
-          ignore: brands

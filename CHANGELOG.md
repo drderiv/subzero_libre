@@ -1,5 +1,13 @@
 # Changelog
 
+## 1.1.1
+
+### Added
+* Integration icon (`brand/icon.png`, `icon@2x.png`) shown in Home Assistant and HACS.
+
+### Changed
+* The HACS validation workflow now runs without any ignored checks.
+
 ## 1.1.0
 
 ### Added
