@@ -1,0 +1,57 @@
+{
+  "entity": {
+    "sensor": {
+      "water_filter_pct_remaining": {
+        "default": "mdi:circle-slice-4"
+      },
+      "air_filter_pct_remaining": {
+        "default": "mdi:air-filter"
+      }
+    },
+    "number": {
+      "ref_set_temp": {
+        "default": "mdi:thermometer"
+      },
+      "frz_set_temp": {
+        "default": "mdi:snowflake-thermometer"
+      },
+      "crisp_set_temp": {
+        "default": "mdi:fruit-cherries"
+      }
+    },
+    "switch": {
+      "air_filter_on": {
+        "default": "mdi:air-purifier"
+      },
+      "night_mode": {
+        "default": "mdi:weather-night"
+      },
+      "crisp_temp_mode": {
+        "default": "mdi:thermometer-auto"
+      }
+    },
+    "binary_sensor": {
+      "service_required": {
+        "default": "mdi:wrench",
+        "state": {
+          "on": "mdi:wrench-alert",
+          "off": "mdi:wrench"
+        }
+      },
+      "ice_clean_required": {
+        "default": "mdi:water-boiler-alert"
+      }
+    },
+    "select": {
+      "mode": {
+        "default": "mdi:cog-outline"
+      },
+      "ice_maker_mode": {
+        "default": "mdi:cube-outline"
+      },
+      "humidity_control": {
+        "default": "mdi:water-percent"
+      }
+    }
+  }
+}

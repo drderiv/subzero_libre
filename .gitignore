@@ -1,0 +1,27 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+.venv/
+env/
+venv/
+ENV/
+
+# Home Assistant test & runtime data
+.homeassistant/
+*.log
+
+# Sensitive credentials & tokens
+*token*.json
+subzero_tokens.json
+twin_*.json
+appliance_*.json
+test.txt
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo

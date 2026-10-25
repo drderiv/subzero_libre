@@ -1,0 +1,13 @@
+{
+  "domain": "subzero_libre",
+  "name": "Sub-Zero Libre",
+  "codeowners": ["@drderiv"],
+  "config_flow": true,
+  "documentation": "https://github.com/drderiv/subzero_libre",
+  "integration_type": "hub",
+  "iot_class": "cloud_push",
+  "issue_tracker": "https://github.com/drderiv/subzero_libre/issues",
+  "loggers": ["custom_components.subzero_libre"],
+  "requirements": [],
+  "version": "1.0.0"
+}

@@ -1,0 +1,144 @@
+{
+  "config": {
+    "step": {
+      "user": {
+        "title": "Sub-Zero Account Authentication",
+        "description": "### 1. Open Sign-In on a Desktop Browser\n*(Please use a desktop browser such as Chrome, Edge, or Firefox rather than a mobile device or app)*\n\nClick the link below to open the sign-in page, and wait for it to finish loading:\n[**Click Here to Log In with Sub-Zero**]({auth_url})\n\n### 2. Capture the Redirect URL\n1. Let the sign-in page **finish loading completely**. Only then open Developer Tools (press **F12** or **Ctrl+Shift+I**, or use the browser menu) and switch to the **Network** tab. Opening it earlier just fills it with page-load noise.\n2. Enter your email and password, then click **Sign In**.\n3. The page stays on the login screen. Depending on your setup you may see something like \"Page Not Found\" or \"Unable to open address\", or a box asking if you wish to open another application; just ignore any of these. The Network tab now shows only a few new rows; the last one, at the bottom, is red (it failed because desktop browsers cannot open the mobile app link).\n4. Right-click that red row and choose **Copy** > **Copy URL**. It starts with `com.szg.szgdigitalproductexperience://oauth/redirect?code=...`\n5. Paste the copied URL below and click **Submit**.\n\n*(Alternatively, you can paste an existing refresh token or `subzero_tokens.json`)*",
+        "data": {
+          "refresh_token": "Redirect URL, Code, or Refresh Token"
+        },
+        "data_description": {
+          "refresh_token": "The com.szg... redirect URL from the sign-in page, or an existing refresh token / subzero_tokens.json."
+        }
+      },
+      "reauth_confirm": {
+        "title": "Re-authenticate Sub-Zero Account",
+        "description": "Your Sub-Zero sign-in has expired or was revoked. Sign in again to continue.\n\nClick the link below to open the sign-in page in a desktop browser, and wait for it to finish loading:\n[**Click Here to Log In with Sub-Zero**]({auth_url})\n\n### 2. Capture the Redirect URL\n1. Let the sign-in page **finish loading completely**. Only then open Developer Tools (press **F12** or **Ctrl+Shift+I**, or use the browser menu) and switch to the **Network** tab. Opening it earlier just fills it with page-load noise.\n2. Enter your email and password, then click **Sign In**.\n3. The page stays on the login screen. Depending on your setup you may see something like \"Page Not Found\" or \"Unable to open address\", or a box asking if you wish to open another application; just ignore any of these. The Network tab now shows only a few new rows; the last one, at the bottom, is red (it failed because desktop browsers cannot open the mobile app link).\n4. Right-click that red row and choose **Copy** > **Copy URL**. It starts with `com.szg.szgdigitalproductexperience://oauth/redirect?code=...`\n5. Paste the copied URL below and click **Submit**.\n\n*(Alternatively, you can paste an existing refresh token or `subzero_tokens.json`)*",
+        "data": {
+          "refresh_token": "Redirect URL, Code, or Refresh Token"
+        },
+        "data_description": {
+          "refresh_token": "The com.szg... redirect URL from the sign-in page, or an existing refresh token / subzero_tokens.json."
+        }
+      }
+    },
+    "error": {
+      "cannot_connect": "Failed to connect to Sub-Zero cloud services.",
+      "invalid_auth": "Authentication failed. Please verify your redirect URL or token and try again.",
+      "no_devices": "No Sub-Zero appliances found on this account.",
+      "unknown": "An unexpected error occurred."
+    },
+    "abort": {
+      "already_configured": "This Sub-Zero account is already configured.",
+      "reauth_successful": "Re-authentication was successful.",
+      "wrong_account": "The signed-in Sub-Zero account does not match the one configured. Please sign in with the original account."
+    }
+  },
+  "options": {
+    "step": {
+      "init": {
+        "title": "Sub-Zero Libre Options",
+        "data": {
+          "poll_interval": "Cloud Check Interval (seconds)"
+        },
+        "data_description": {
+          "poll_interval": "How often Home Assistant re-checks active faults and the appliance list over REST. Live state (temperatures, doors, modes) arrives instantly over the real-time connection regardless."
+        }
+      }
+    }
+  },
+  "entity": {
+    "sensor": {
+      "water_filter_pct_remaining": {
+        "name": "Water Filter Life"
+      },
+      "air_filter_pct_remaining": {
+        "name": "Air Filter Life"
+      },
+      "ap_rssi": {
+        "name": "Wi-Fi Signal Strength"
+      }
+    },
+    "number": {
+      "ref_set_temp": {
+        "name": "Refrigerator Temperature Setpoint"
+      },
+      "frz_set_temp": {
+        "name": "Freezer Temperature Setpoint"
+      },
+      "crisp_set_temp": {
+        "name": "Crisper Temperature Setpoint"
+      }
+    },
+    "binary_sensor": {
+      "door_ajar": {
+        "name": "{door} Door"
+      },
+      "service_required": {
+        "name": "Service Required"
+      },
+      "unit_on": {
+        "name": "Power Status"
+      },
+      "ice_clean_required": {
+        "name": "Ice Clean Required"
+      },
+      "faults": {
+        "name": "Appliance Fault"
+      },
+      "connected": {
+        "name": "Cloud Connection"
+      }
+    },
+    "switch": {
+      "air_filter_on": {
+        "name": "Air Purification"
+      },
+      "night_mode": {
+        "name": "Night Mode"
+      },
+      "crisp_temp_mode": {
+        "name": "Automatic Crisper Temperature"
+      }
+    },
+    "select": {
+      "mode": {
+        "name": "Mode",
+        "state": {
+          "normal": "Normal",
+          "high_use": "High Usage",
+          "short_vacation": "Short Vacation",
+          "long_vacation": "Long Vacation",
+          "sabbath": "Sabbath"
+        }
+      },
+      "ice_maker_mode": {
+        "name": "Ice Maker",
+        "state": {
+          "normal": "Normal",
+          "max_ice": "Max Ice",
+          "night_ice": "Night Ice",
+          "off": "Off"
+        }
+      },
+      "humidity_control": {
+        "name": "Humidity Control",
+        "state": {
+          "normal": "Normal",
+          "enhanced": "Enhanced"
+        }
+      }
+    }
+  },
+  "exceptions": {
+    "appliance_not_found": {
+      "message": "The Sub-Zero appliance was not found. It may have been removed from the account."
+    },
+    "command_failed": {
+      "message": "Failed to change {setting} on the Sub-Zero appliance. Check the Sub-Zero cloud connection and try again."
+    },
+    "crisper_auto_on": {
+      "message": "The Crisper setpoint is controlled automatically (Refrigerator minus 2°F). Turn off Automatic Crisper Temperature to set it manually."
+    }
+  }
+}
